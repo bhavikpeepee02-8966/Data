@@ -170,7 +170,6 @@
     <label class="btn btn-upload" for="fileInput">📤 CSV / ZIP અપલોડ કરો (multi-select ચાલે)</label>
     <input type="file" id="fileInput" accept=".csv,.zip" multiple>
     <div class="status" id="status"></div>
-    <button class="btn" id="resetBtn" style="background:var(--red);margin-top:8px;">🗑️ Reset ડેટા (history + date-list બંને ભૂંસો)</button>
   </div>
 
   <div id="downloadTop"></div>
@@ -190,7 +189,52 @@ let stageFilter = { early: true, mid: true, late: true };
 
 function setStatus(msg){ document.getElementById('status').textContent = msg; }
 
-/* ---------- localStorage helpers ---------- */
+/* ---------- IndexedDB storage (much larger quota than localStorage) ---------- */
+const IDB_NAME = 'breakoutScreenerDB';
+const IDB_STORE = 'kv';
+let idbPromise = null;
+function openIDB(){
+  if(idbPromise) return idbPromise;
+  idbPromise = new Promise((resolve, reject) => {
+    if(!window.indexedDB){ reject(new Error('IndexedDB unsupported')); return; }
+    const req = indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = (e) => {
+      const db = e.target.result;
+      if(!db.objectStoreNames.contains(IDB_STORE)) db.createObjectStore(IDB_STORE);
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+  return idbPromise;
+}
+async function idbGet(key){
+  const db = await openIDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, 'readonly');
+    const req = tx.objectStore(IDB_STORE).get(key);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+async function idbSet(key, value){
+  const db = await openIDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, 'readwrite');
+    tx.objectStore(IDB_STORE).put(value, key);
+    tx.oncomplete = () => resolve(true);
+    tx.onerror = () => reject(tx.error);
+  });
+}
+async function idbDelete(key){
+  const db = await openIDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, 'readwrite');
+    tx.objectStore(IDB_STORE).delete(key);
+    tx.oncomplete = () => resolve(true);
+    tx.onerror = () => reject(tx.error);
+  });
+}
+function lsDelete(key){ localStorage.removeItem(key); }
 function lsGet(key){
   try{ const v = localStorage.getItem(key); return v ? JSON.parse(v) : null; }
   catch(e){ return null; }
@@ -199,30 +243,56 @@ function lsSet(key, value){
   try{ localStorage.setItem(key, JSON.stringify(value)); return true; }
   catch(e){ console.error('storage save failed', e); return false; }
 }
-function lsDelete(key){ localStorage.removeItem(key); }
 
 async function loadHistory(){
-  return lsGet('breakout_history') || {};
+  try{
+    const v = await idbGet('breakout_history');
+    if(v) return v;
+    const legacy = localStorage.getItem('breakout_history'); // migrate old data once
+    if(legacy){
+      const parsed = JSON.parse(legacy);
+      await idbSet('breakout_history', parsed);
+      localStorage.removeItem('breakout_history');
+      return parsed;
+    }
+    return {};
+  }catch(e){ return {}; }
 }
 async function saveHistory(hist){
-  if(lsSet('breakout_history', hist)) return { ok: true };
-  // quota exceeded — trim per-symbol history and retry
-  for(const cap of [15, 10, 5]){
-    const trimmed = {};
-    for(const sym in hist){ trimmed[sym] = hist[sym].slice(-cap); }
-    if(lsSet('breakout_history', trimmed)){
-      for(const sym in hist){ hist[sym] = trimmed[sym]; }
-      return { ok: true, trimmedTo: cap };
+  try{
+    await idbSet('breakout_history', hist);
+    return { ok: true };
+  }catch(e){
+    console.error('storage save failed', e);
+    for(const cap of [15, 10, 5]){
+      try{
+        const trimmed = {};
+        for(const sym in hist){ trimmed[sym] = hist[sym].slice(-cap); }
+        await idbSet('breakout_history', trimmed);
+        for(const sym in hist){ hist[sym] = trimmed[sym]; }
+        return { ok: true, trimmedTo: cap };
+      }catch(e2){ /* try smaller cap */ }
     }
+    return { ok: false, error: (e && e.name) ? e.name : String(e) };
   }
-  return { ok: false, error: 'QuotaExceeded' };
 }
 async function loadUploadedDates(){
-  return lsGet('breakout_dates') || [];
-
+  try{
+    const v = await idbGet('breakout_dates');
+    if(v) return v;
+    const legacy = localStorage.getItem('breakout_dates'); // migrate old data once
+    if(legacy){
+      const parsed = JSON.parse(legacy);
+      await idbSet('breakout_dates', parsed);
+      localStorage.removeItem('breakout_dates');
+      return parsed;
+    }
+    return [];
+  }catch(e){ return []; }
 }
 async function saveUploadedDates(list){
-  return lsSet('breakout_dates', list);
+  try{ await idbSet('breakout_dates', list); return true; }
+  catch(e){ console.error('storage save failed', e); return false; }
 }
 
 function normalizeRow(row){
@@ -296,7 +366,8 @@ async function refreshReminder(){
   const el = document.getElementById('reminderBanner');
   let html = '';
   if(dates.length && !symCount){
-    html += `<div class="reminder warn">⚠️ <b>Data mismatch:</b> ${dates.length} તારીખ date-list માં છે પણ કોઈ stock history સેવ નથી — નવી ફાઈલો "ફરી" ગણાઈને history નહીં બંધાય. નીચે <b>🗑️ Reset ડેટા</b> દબાવીને ફરી fresh upload કરો.</div>`;
+    await saveUploadedDates([]); // auto-clear stale date-list so next upload builds fresh history correctly
+    html += `<div class="reminder warn">ℹ️ જૂની date-list આપોઆપ સાફ કરી (એની સાથે કોઈ stock history નહોતું) — હવે ફાઈલ upload કરો, fresh history બંધાશે.</div>`;
   }
   if(missing.length){
     const links = missing.map(d => `<a href="${nseLinkForDate(d)}" target="_blank" rel="noopener" style="color:var(--red);text-decoration:underline;">${d}</a>`).join(', ');
@@ -438,28 +509,6 @@ function googleLink(symbol){
 
 document.getElementById('fileInput').addEventListener('change', handleFile);
 
-async function resetData(){
-  const hist = await loadHistory();
-  const dates = await loadUploadedDates();
-  const symCount = Object.keys(hist).length;
-  const ok = confirm(
-    `આ ${symCount} શેર ની history અને ${dates.length} તારીખની date-list — બંને કાયમ માટે ભૂંસાઈ જશે.\n\n` +
-    `ખરેખર Reset કરવું છે?`
-  );
-  if(!ok) return;
-  lsDelete('breakout_history');
-  lsDelete('breakout_dates');
-  lsDelete('breakout_last_results');
-  lastResults = [];
-  updateStatPills(0, 0);
-  await refreshReminder();
-  document.getElementById('results').innerHTML = '';
-  document.getElementById('downloadTop').innerHTML = '';
-  setStatus('✅ Reset થઈ ગયું — history + date-list બંને ખાલી. હવે ફાઈલો ફરી upload કરો.');
-}
-
-document.getElementById('resetBtn').addEventListener('click', resetData);
-
 function readFileAsRows(file){
   return new Promise((resolve, reject) => {
     const name = file.name.toLowerCase();
@@ -506,7 +555,9 @@ async function handleFile(e){
 
   setStatus(`ડેટા સેવ થાય છે...`);
   const histResult = await saveHistory(hist);
-  const ok2 = await saveUploadedDates(uploadedDates);
+  // auto-cleanup: keep only the most recent 35 dates (buffer above the 30-day rolling window)
+  const trimmedDates = [...new Set(uploadedDates)].sort().slice(-35);
+  const ok2 = await saveUploadedDates(trimmedDates);
 
   if(finalScored){
     lastResults = finalScored;
