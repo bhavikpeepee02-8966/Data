@@ -196,22 +196,78 @@ let stageFilter = { early: true, mid: true, late: true };
 
 function setStatus(msg){ document.getElementById('status').textContent = msg; }
 
+/* ---------- IndexedDB storage (much larger quota than localStorage) ---------- */
+const IDB_NAME = 'breakoutScreenerDB';
+const IDB_STORE = 'kv';
+let idbPromise = null;
+function openIDB(){
+  if(idbPromise) return idbPromise;
+  idbPromise = new Promise((resolve, reject) => {
+    if(!window.indexedDB){ reject(new Error('IndexedDB unsupported')); return; }
+    const req = indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = (e) => {
+      const db = e.target.result;
+      if(!db.objectStoreNames.contains(IDB_STORE)) db.createObjectStore(IDB_STORE);
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+  return idbPromise;
+}
+async function idbGet(key){
+  const db = await openIDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, 'readonly');
+    const req = tx.objectStore(IDB_STORE).get(key);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+async function idbSet(key, value){
+  const db = await openIDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, 'readwrite');
+    tx.objectStore(IDB_STORE).put(value, key);
+    tx.oncomplete = () => resolve(true);
+    tx.onerror = () => reject(tx.error);
+  });
+}
+async function idbDelete(key){
+  const db = await openIDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, 'readwrite');
+    tx.objectStore(IDB_STORE).delete(key);
+    tx.oncomplete = () => resolve(true);
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
 async function loadHistory(){
-  try{ const v = localStorage.getItem('breakout_history'); return v ? JSON.parse(v) : {}; }
-  catch(e){ return {}; }
+  try{
+    const v = await idbGet('breakout_history');
+    if(v) return v;
+    const legacy = localStorage.getItem('breakout_history'); // migrate old data once
+    if(legacy){
+      const parsed = JSON.parse(legacy);
+      await idbSet('breakout_history', parsed);
+      localStorage.removeItem('breakout_history');
+      return parsed;
+    }
+    return {};
+  }catch(e){ return {}; }
 }
 async function saveHistory(hist){
   try{
-    localStorage.setItem('breakout_history', JSON.stringify(hist));
+    await idbSet('breakout_history', hist);
     return { ok: true };
   }catch(e){
     console.error('storage save failed', e);
-    // Likely quota exceeded — retry with trimmed history (fewer days per symbol)
+    // Very large quota, but keep trimming fallback as last resort
     for(const cap of [15, 10, 5]){
       try{
         const trimmed = {};
         for(const sym in hist){ trimmed[sym] = hist[sym].slice(-cap); }
-        localStorage.setItem('breakout_history', JSON.stringify(trimmed));
+        await idbSet('breakout_history', trimmed);
         for(const sym in hist){ hist[sym] = trimmed[sym]; }
         return { ok: true, trimmedTo: cap };
       }catch(e2){ /* try smaller cap */ }
@@ -220,11 +276,21 @@ async function saveHistory(hist){
   }
 }
 async function loadUploadedDates(){
-  try{ const v = localStorage.getItem('breakout_dates'); return v ? JSON.parse(v) : []; }
-  catch(e){ return []; }
+  try{
+    const v = await idbGet('breakout_dates');
+    if(v) return v;
+    const legacy = localStorage.getItem('breakout_dates'); // migrate old data once
+    if(legacy){
+      const parsed = JSON.parse(legacy);
+      await idbSet('breakout_dates', parsed);
+      localStorage.removeItem('breakout_dates');
+      return parsed;
+    }
+    return [];
+  }catch(e){ return []; }
 }
 async function saveUploadedDates(list){
-  try{ localStorage.setItem('breakout_dates', JSON.stringify(list)); return true; }
+  try{ await idbSet('breakout_dates', list); return true; }
   catch(e){ console.error('storage save failed', e); return false; }
 }
 
@@ -530,6 +596,8 @@ async function resetData(){
   if(!ok) return;
   localStorage.removeItem('breakout_history');
   localStorage.removeItem('breakout_dates');
+  await idbDelete('breakout_history');
+  await idbDelete('breakout_dates');
   lastResults = [];
   updateStatPills(0, 0);
   await refreshReminder();
