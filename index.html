@@ -4,10 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>બ્રેકઆઉટ સ્ક્રીનર</title>
-<link rel="manifest" href="manifest.json">
-<meta name="theme-color" content="#145C4B">
-<link rel="icon" href="icon-512.png">
-<link rel="apple-touch-icon" href="icon-512.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Gujarati:wght@400;600;700;800&family=Poppins:wght@400;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
@@ -198,8 +194,23 @@ async function loadHistory(){
   catch(e){ return {}; }
 }
 async function saveHistory(hist){
-  try{ localStorage.setItem('breakout_history', JSON.stringify(hist)); return true; }
-  catch(e){ console.error('storage save failed', e); return false; }
+  try{
+    localStorage.setItem('breakout_history', JSON.stringify(hist));
+    return { ok: true };
+  }catch(e){
+    console.error('storage save failed', e);
+    // Likely quota exceeded — retry with trimmed history (fewer days per symbol)
+    for(const cap of [15, 10, 5]){
+      try{
+        const trimmed = {};
+        for(const sym in hist){ trimmed[sym] = hist[sym].slice(-cap); }
+        localStorage.setItem('breakout_history', JSON.stringify(trimmed));
+        for(const sym in hist){ hist[sym] = trimmed[sym]; }
+        return { ok: true, trimmedTo: cap };
+      }catch(e2){ /* try smaller cap */ }
+    }
+    return { ok: false, error: (e && e.name) ? e.name : String(e) };
+  }
 }
 async function loadUploadedDates(){
   try{ const v = localStorage.getItem('breakout_dates'); return v ? JSON.parse(v) : []; }
@@ -463,7 +474,7 @@ async function handleFile(e){
   }
 
   setStatus(`ડેટા સેવ થાય છે...`);
-  const ok1 = await saveHistory(hist);
+  const histResult = await saveHistory(hist);
   const ok2 = await saveUploadedDates(uploadedDates);
 
   if(finalScored){ lastResults = finalScored; render(); }
@@ -472,8 +483,10 @@ async function handleFile(e){
   await refreshReminder();
 
   let statusMsg;
-  if(!ok1 || !ok2){
-    statusMsg = `⚠️ પ્રોસેસ થઈ પણ સેવ કરવામાં સમસ્યા આવી — ફરી પ્રયત્ન કરો (ઓછી ફાઈલો એક સાથે upload કરીને)`;
+  if(!histResult.ok || !ok2){
+    statusMsg = `⚠️ ડેટા મોટું હોવાથી સેવ ન થયું (${histResult.error || 'quota'}) — ઓછી ફાઈલો (10-15) એક સાથે upload કરી જુઓ`;
+  } else if(histResult.trimmedTo){
+    statusMsg = `⚠️ Storage ભરાઈ ગયું હતું — ડેટા છેલ્લા ${histResult.trimmedTo} દિવસ સુધી ટૂંકું કરીને સેવ કર્યું (RSI/MACD માટે ઓછું ચોક્કસ થશે)`;
   } else {
     const newCount = summary.filter(s => !s.includes('(ફરી)') && !s.startsWith('❌')).length;
     const reuploadCount = summary.filter(s => s.includes('(ફરી)')).length;
