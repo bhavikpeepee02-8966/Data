@@ -170,13 +170,7 @@
     <label class="btn btn-upload" for="fileInput">📤 CSV / ZIP અપલોડ કરો (multi-select ચાલે)</label>
     <input type="file" id="fileInput" accept=".csv,.zip" multiple>
     <div class="status" id="status"></div>
-    <div style="display:flex;gap:8px;margin-top:10px;">
-      <button class="btn" id="exportBtn" style="background:var(--mid);margin-bottom:0;">💾 History Export</button>
-      <label class="btn" for="importInput" style="background:var(--gold);margin-bottom:0;">📥 History Import</label>
-      <input type="file" id="importInput" accept=".json" style="display:none;">
-    </div>
     <button class="btn" id="resetBtn" style="background:var(--red);margin-top:8px;">🗑️ Reset ડેટા (history + date-list બંને ભૂંસો)</button>
-    <div class="upload-hint" style="margin-top:6px;">🔒 Browser બંધ/clear થાય એ પહેલા <b>Export</b> કરી JSON ફાઈલ સાચવો — ફરી જરૂર પડે તો <b>Import</b> કરીને history પાછું લાવો.</div>
   </div>
 
   <div id="downloadTop"></div>
@@ -196,102 +190,39 @@ let stageFilter = { early: true, mid: true, late: true };
 
 function setStatus(msg){ document.getElementById('status').textContent = msg; }
 
-/* ---------- IndexedDB storage (much larger quota than localStorage) ---------- */
-const IDB_NAME = 'breakoutScreenerDB';
-const IDB_STORE = 'kv';
-let idbPromise = null;
-function openIDB(){
-  if(idbPromise) return idbPromise;
-  idbPromise = new Promise((resolve, reject) => {
-    if(!window.indexedDB){ reject(new Error('IndexedDB unsupported')); return; }
-    const req = indexedDB.open(IDB_NAME, 1);
-    req.onupgradeneeded = (e) => {
-      const db = e.target.result;
-      if(!db.objectStoreNames.contains(IDB_STORE)) db.createObjectStore(IDB_STORE);
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-  return idbPromise;
+/* ---------- localStorage helpers ---------- */
+function lsGet(key){
+  try{ const v = localStorage.getItem(key); return v ? JSON.parse(v) : null; }
+  catch(e){ return null; }
 }
-async function idbGet(key){
-  const db = await openIDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(IDB_STORE, 'readonly');
-    const req = tx.objectStore(IDB_STORE).get(key);
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
+function lsSet(key, value){
+  try{ localStorage.setItem(key, JSON.stringify(value)); return true; }
+  catch(e){ console.error('storage save failed', e); return false; }
 }
-async function idbSet(key, value){
-  const db = await openIDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(IDB_STORE, 'readwrite');
-    tx.objectStore(IDB_STORE).put(value, key);
-    tx.oncomplete = () => resolve(true);
-    tx.onerror = () => reject(tx.error);
-  });
-}
-async function idbDelete(key){
-  const db = await openIDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(IDB_STORE, 'readwrite');
-    tx.objectStore(IDB_STORE).delete(key);
-    tx.oncomplete = () => resolve(true);
-    tx.onerror = () => reject(tx.error);
-  });
-}
+function lsDelete(key){ localStorage.removeItem(key); }
 
 async function loadHistory(){
-  try{
-    const v = await idbGet('breakout_history');
-    if(v) return v;
-    const legacy = localStorage.getItem('breakout_history'); // migrate old data once
-    if(legacy){
-      const parsed = JSON.parse(legacy);
-      await idbSet('breakout_history', parsed);
-      localStorage.removeItem('breakout_history');
-      return parsed;
-    }
-    return {};
-  }catch(e){ return {}; }
+  return lsGet('breakout_history') || {};
 }
 async function saveHistory(hist){
-  try{
-    await idbSet('breakout_history', hist);
-    return { ok: true };
-  }catch(e){
-    console.error('storage save failed', e);
-    // Very large quota, but keep trimming fallback as last resort
-    for(const cap of [15, 10, 5]){
-      try{
-        const trimmed = {};
-        for(const sym in hist){ trimmed[sym] = hist[sym].slice(-cap); }
-        await idbSet('breakout_history', trimmed);
-        for(const sym in hist){ hist[sym] = trimmed[sym]; }
-        return { ok: true, trimmedTo: cap };
-      }catch(e2){ /* try smaller cap */ }
+  if(lsSet('breakout_history', hist)) return { ok: true };
+  // quota exceeded — trim per-symbol history and retry
+  for(const cap of [15, 10, 5]){
+    const trimmed = {};
+    for(const sym in hist){ trimmed[sym] = hist[sym].slice(-cap); }
+    if(lsSet('breakout_history', trimmed)){
+      for(const sym in hist){ hist[sym] = trimmed[sym]; }
+      return { ok: true, trimmedTo: cap };
     }
-    return { ok: false, error: (e && e.name) ? e.name : String(e) };
   }
+  return { ok: false, error: 'QuotaExceeded' };
 }
 async function loadUploadedDates(){
-  try{
-    const v = await idbGet('breakout_dates');
-    if(v) return v;
-    const legacy = localStorage.getItem('breakout_dates'); // migrate old data once
-    if(legacy){
-      const parsed = JSON.parse(legacy);
-      await idbSet('breakout_dates', parsed);
-      localStorage.removeItem('breakout_dates');
-      return parsed;
-    }
-    return [];
-  }catch(e){ return []; }
+  return lsGet('breakout_dates') || [];
+
 }
 async function saveUploadedDates(list){
-  try{ await idbSet('breakout_dates', list); return true; }
-  catch(e){ console.error('storage save failed', e); return false; }
+  return lsSet('breakout_dates', list);
 }
 
 function normalizeRow(row){
@@ -507,97 +438,18 @@ function googleLink(symbol){
 
 document.getElementById('fileInput').addEventListener('change', handleFile);
 
-/* ---------- History Export / Import ---------- */
-async function exportHistory(){
-  try{
-    const hist = await loadHistory();
-    const uploadedDates = await loadUploadedDates();
-    const symCount = Object.keys(hist).length;
-    if(!symCount){
-      setStatus('⚠️ Export કરવા માટે કોઈ history data નથી.');
-      return;
-    }
-    const payload = {
-      app: 'breakout-screener-history',
-      exportedAt: new Date().toISOString(),
-      hist,
-      uploadedDates
-    };
-    const dataUri = 'data:application/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(payload));
-    const a = document.createElement('a');
-    a.href = dataUri;
-    a.download = `breakout-history-backup-${todayIsoLocal()}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setStatus(`✅ History Export થયું (${symCount} શેર, ${uploadedDates.length} દિવસ)`);
-  }catch(err){
-    setStatus('❌ Export માં ભૂલ: ' + err.message);
-  }
-}
-
-async function importHistory(e){
-  const file = e.target.files && e.target.files[0];
-  if(!file) return;
-  try{
-    const text = await file.text();
-    const payload = JSON.parse(text);
-    if(!payload || typeof payload.hist !== 'object' || !Array.isArray(payload.uploadedDates)){
-      setStatus('❌ આ JSON ફાઈલ history backup ફોર્મેટ ની નથી લાગતી.');
-      e.target.value = '';
-      return;
-    }
-    const existingHist = await loadHistory();
-    const existingDates = await loadUploadedDates();
-    const existingSymCount = Object.keys(existingHist).length;
-
-    let mergedHist = payload.hist, mergedDates = payload.uploadedDates;
-    if(existingSymCount || existingDates.length){
-      const overwrite = confirm(
-        `હાલમાં પહેલેથી ${existingSymCount} શેર / ${existingDates.length} દિવસનું data છે.\n\n` +
-        `OK = Import ફાઈલ થી બદલી નાખો (overwrite)\n` +
-        `Cancel = બંને ને ભેગું કરો (merge, નવું data priority)`
-      );
-      if(!overwrite){
-        mergedHist = { ...existingHist, ...payload.hist };
-        mergedDates = Array.from(new Set([...existingDates, ...payload.uploadedDates])).sort();
-      }
-    }
-
-    const histResult = await saveHistory(mergedHist);
-    await saveUploadedDates(mergedDates);
-
-    const maxDays = Math.max(0, ...Object.values(mergedHist).map(h => h.length));
-    updateStatPills(Object.keys(mergedHist).length, maxDays);
-    await refreshReminder();
-
-    if(!histResult.ok){
-      setStatus(`⚠️ Import થયું પણ સેવ ન થયું (${histResult.error || 'quota'}) — data મોટું છે`);
-    } else if(histResult.trimmedTo){
-      setStatus(`⚠️ Import થયું, Storage ભરાઈ જવાથી છેલ્લા ${histResult.trimmedTo} દિવસ સુધી ટૂંકું કરાયું`);
-    } else {
-      setStatus(`✅ History Import થયું (${Object.keys(mergedHist).length} શેર, ${mergedDates.length} દિવસ)`);
-    }
-  }catch(err){
-    setStatus('❌ Import માં ભૂલ: ' + err.message);
-  }
-  e.target.value = '';
-}
-
 async function resetData(){
   const hist = await loadHistory();
   const dates = await loadUploadedDates();
   const symCount = Object.keys(hist).length;
   const ok = confirm(
     `આ ${symCount} શેર ની history અને ${dates.length} તારીખની date-list — બંને કાયમ માટે ભૂંસાઈ જશે.\n\n` +
-    `Reset પહેલા "💾 History Export" કરીને backup લેવાની ભલામણ છે.\n\n` +
     `ખરેખર Reset કરવું છે?`
   );
   if(!ok) return;
-  localStorage.removeItem('breakout_history');
-  localStorage.removeItem('breakout_dates');
-  await idbDelete('breakout_history');
-  await idbDelete('breakout_dates');
+  lsDelete('breakout_history');
+  lsDelete('breakout_dates');
+  lsDelete('breakout_last_results');
   lastResults = [];
   updateStatPills(0, 0);
   await refreshReminder();
@@ -606,8 +458,6 @@ async function resetData(){
   setStatus('✅ Reset થઈ ગયું — history + date-list બંને ખાલી. હવે ફાઈલો ફરી upload કરો.');
 }
 
-document.getElementById('exportBtn').addEventListener('click', exportHistory);
-document.getElementById('importInput').addEventListener('change', importHistory);
 document.getElementById('resetBtn').addEventListener('click', resetData);
 
 function readFileAsRows(file){
@@ -658,7 +508,11 @@ async function handleFile(e){
   const histResult = await saveHistory(hist);
   const ok2 = await saveUploadedDates(uploadedDates);
 
-  if(finalScored){ lastResults = finalScored; render(); }
+  if(finalScored){
+    lastResults = finalScored;
+    lsSet('breakout_last_results', lastResults);
+    render();
+  }
   const maxDays = Math.max(0, ...Object.values(hist).map(h => h.length));
   updateStatPills(Object.keys(hist).length, maxDays);
   await refreshReminder();
@@ -838,6 +692,14 @@ function downloadCsv(){
   const maxDays = Math.max(0, ...Object.values(hist).map(h => h.length));
   updateStatPills(Object.keys(hist).length, maxDays);
   await refreshReminder();
+
+  // Restore the last screening results so reopening the app doesn't show blank —
+  // only new file uploads recompute; this just redisplays what was last shown.
+  const savedResults = lsGet('breakout_last_results');
+  if(savedResults && savedResults.length){
+    lastResults = savedResults;
+    render();
+  }
 })();
 </script>
 </body>
