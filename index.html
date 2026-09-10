@@ -498,17 +498,28 @@ async function handleFile(e){
   const uploadedDates = await loadUploadedDates();
 
   const summary = [];
-  let finalScored = null, finalDate = null;
+  let finalDate = null, finalResults = null;
 
   for(let i = 0; i < files.length; i++){
     const f = files[i];
     setStatus(`ફાઈલ ${i+1}/${files.length} પ્રોસેસ થાય છે... (${f.name})`);
     try{
       const rows = await readFileAsRows(f);
-      const { fileDate, scored, isReupload } = processFileRows(rows, hist, uploadedDates);
+      const { fileDate, results, isReupload } = processFileRows(rows, hist, uploadedDates);
       summary.push(fileDate ? (fileDate + (isReupload ? ' (ફરી)' : '')) : f.name);
-      if(!finalDate || (fileDate && fileDate > finalDate)){ finalDate = fileDate; finalScored = scored; }
+      if(!finalDate || (fileDate && fileDate > finalDate)){ finalDate = fileDate; finalResults = results; }
     }catch(err){ summary.push(`❌ ${f.name}`); }
+    // yield to the browser between files so the UI/status updates and doesn't freeze
+    await new Promise(r => setTimeout(r, 0));
+  }
+
+  // Expensive RSI/MACD scoring runs exactly once, for the latest file only —
+  // not once per uploaded file (that was the batch-upload freeze/crash bug).
+  let finalScored = null;
+  if(finalResults){
+    setStatus(`સ્કોરિંગ ગણાય છે...`);
+    await new Promise(r => setTimeout(r, 0));
+    finalScored = scoreRows(finalResults, hist);
   }
 
   setStatus(`ડેટા સેવ થાય છે...`);
@@ -556,6 +567,25 @@ function processFileRows(rows, hist, uploadedDates){
   const fileDate = parsedDate ? fmtDate(parsedDate) : null;
   const isReupload = fileDate && uploadedDates.includes(fileDate);
 
+  // Cheap pass: just push today's [close, volume] into each symbol's rolling history.
+  // No RSI/MACD/scoring here — that's expensive and only needed for the ONE file
+  // we actually display (the latest date), not for every historical backfill file.
+  if(!isReupload){
+    for(const row of results){
+      const symHist = hist[row.symbol] || [];
+      symHist.push([+row.close.toFixed(2), Math.round(row.volume || 0)]);
+      while(symHist.length > 30) symHist.shift();
+      hist[row.symbol] = symHist;
+    }
+    if(fileDate) uploadedDates.push(fileDate);
+  }
+
+  return { fileDate, results, isReupload };
+}
+
+// Expensive pass: run RSI/MACD/scoring once, over one file's rows, using the
+// now-fully-updated history. Only called for the latest-dated file in a batch.
+function scoreRows(results, hist){
   const scored = [];
   for(const row of results){
     const symHist = hist[row.symbol] || [];
@@ -565,16 +595,8 @@ function processFileRows(rows, hist, uploadedDates){
     const target = (entry && stopLoss) ? +(entry + 2 * (entry - stopLoss)).toFixed(2) : null;
     const stage = moveStage(chg, rsi, row.close, ma20);
     scored.push({ ...row, score, reasons, chg, volRatio, rsi, entry, stopLoss, target, stage });
-    if(!isReupload){
-      symHist.push([+row.close.toFixed(2), Math.round(row.volume || 0)]);
-      while(symHist.length > 30) symHist.shift();
-      hist[row.symbol] = symHist;
-    }
   }
-
-  if(!isReupload && fileDate){ uploadedDates.push(fileDate); }
-
-  return { fileDate, scored: scored.sort((a,b) => b.score - a.score), isReupload };
+  return scored.sort((a,b) => b.score - a.score);
 }
 
 function updateStatPills(symCount, maxDays){
