@@ -211,8 +211,8 @@ async function loadHistory(){
 }
 async function saveHistory(hist){
   if(lsSet('breakout_history', hist)) return { ok: true };
-  // quota exceeded — trim per-symbol history and retry
-  for(const cap of [15, 10, 5]){
+  // quota exceeded — trim toward 26 days (MACD's minimum requirement), never below it
+  for(const cap of [28, 26]){
     const trimmed = {};
     for(const sym in hist){ trimmed[sym] = hist[sym].slice(-cap); }
     if(lsSet('breakout_history', trimmed)){
@@ -220,7 +220,9 @@ async function saveHistory(hist){
       return { ok: true, trimmedTo: cap };
     }
   }
-  return { ok: false, error: 'QuotaExceeded' };
+  // Still doesn't fit even at 26 days (MACD minimum) — don't silently go lower and break MACD.
+  // Fail clearly so the person knows storage is genuinely full, not just "a bit short".
+  return { ok: false, error: 'QuotaExceeded26' };
 }
 async function loadUploadedDates(){
   return lsGet('breakout_dates') || [];
@@ -524,9 +526,9 @@ async function handleFile(e){
 
   let statusMsg;
   if(!histResult.ok || !ok2){
-    statusMsg = `⚠️ ડેટા મોટું હોવાથી સેવ ન થયું (${histResult.error || 'quota'}) — ઓછી ફાઈલો (10-15) એક સાથે upload કરી જુઓ`;
+    statusMsg = `⚠️ તમારા ડિવાઈસમાં જગ્યા ઓછી છે — 26 દિવસ (MACD ના ન્યૂનતમ) સુધી ટૂંકું કરીને પણ સેવ ના થયું. "🗑️ Reset ડેટા" દબાવીને ઓછા શેર/ફાઈલો સાથે ફરી શરૂ કરો.`;
   } else if(histResult.trimmedTo){
-    statusMsg = `⚠️ Storage ભરાઈ ગયું હતું — ડેટા છેલ્લા ${histResult.trimmedTo} દિવસ સુધી ટૂંકું કરીને સેવ કર્યું (RSI/MACD માટે ઓછું ચોક્કસ થશે)`;
+    statusMsg = `⚠️ Storage ભરાઈ ગયું હતું — ડેટા છેલ્લા ${histResult.trimmedTo} દિવસ સુધી ટૂંકું કરીને સેવ કર્યું (MACD ના 26-day ન્યૂનતમ ની નીચે નથી ગયું)`;
   } else {
     const newCount = summary.filter(s => !s.includes('(ફરી)') && !s.startsWith('❌')).length;
     const reuploadCount = summary.filter(s => s.includes('(ફરી)')).length;
