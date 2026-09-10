@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+<html lang="gu">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>બ્રેકઆઉટ સ્ક્રીનર</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#145C4B">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Gujarati:wght@400;600;700;800&family=Poppins:wght@400;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+  :root{
+    --bg:#F6F8F4;
+    --card:#FFFFFF;
+    --deep:#145C4B;
+    --mid:#2E9E6B;
+    --gold:#E8A93B;
+    --red:#D64550;
+    --text:#1C2B28;
+    --muted:#6B7C77;
+    --border:#E3E9E5;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--bg);
+    font-family:'Noto Sans Gujarati','Poppins',sans-serif;
+    color:var(--text);
+    padding-bottom:60px;
+  }
+  .wrap{max-width:520px;margin:0 auto;padding:0 14px;}
+
+  header{
+    background:linear-gradient(135deg,var(--deep),var(--mid));
+    padding:20px 14px 22px;
+    color:#fff;
+    border-radius:0 0 22px 22px;
+    margin-bottom:14px;
+  }
+  header .htop{max-width:520px;margin:0 auto;}
+  header h1{font-size:1.7rem;font-weight:800;margin:0;}
+  header .sub{font-size:.98rem;opacity:.9;margin-top:4px;line-height:1.5;}
+
+  .stat-row{display:flex;gap:8px;margin:14px 0;flex-wrap:wrap;}
+  .stat-pill{
+    background:var(--card);border:1px solid var(--border);border-radius:999px;
+    padding:8px 14px;font-size:.88rem;color:var(--muted);font-weight:600;
+  }
+
+  .reminder{
+    border-radius:14px;padding:12px 14px;margin-bottom:10px;font-size:.95rem;line-height:1.5;
+  }
+  .reminder.warn{background:#FDEAEA;border:1.5px solid var(--red);}
+  .reminder.warn b{color:var(--red);}
+  .reminder.info{background:#FFF6E0;border:1.5px solid var(--gold);}
+  .reminder.info b{color:#8A6A00;}
+
+  .upload-box{
+    background:var(--card);
+    border:2px dashed var(--mid);
+    border-radius:18px;
+    padding:20px;
+    text-align:center;
+    margin-bottom:14px;
+  }
+  .btn{
+    display:inline-block;width:100%;
+    color:#fff;font-size:1.1rem;font-weight:700;
+    padding:14px 20px;border-radius:14px;border:none;cursor:pointer;
+    margin-bottom:10px;
+  }
+  .btn-nse{background:linear-gradient(90deg,var(--red),#F07B3F);}
+  .btn-upload{background:linear-gradient(90deg,var(--deep),var(--mid));}
+  .upload-hint{font-size:.85rem;color:var(--muted);margin-bottom:10px;line-height:1.4;}
+  input[type=file]{display:none;}
+  .status{margin-top:8px;font-size:.98rem;color:var(--muted);min-height:1.3em;}
+
+  .section-title{font-size:1.2rem;font-weight:800;margin:20px 0 10px;color:var(--deep);}
+
+  .card{
+    background:var(--card);border-radius:16px;margin-bottom:10px;
+    border:1px solid var(--border);overflow:hidden;
+    display:flex;
+  }
+  .card .stripe{width:7px;flex-shrink:0;}
+  .stripe.high{background:var(--deep);}
+  .stripe.mid{background:var(--mid);}
+  .stripe.low{background:var(--gold);}
+  .card-inner{padding:14px 14px;flex:1;min-width:0;}
+  .card-top{display:flex;justify-content:space-between;align-items:flex-start;}
+  .symbol{font-size:1.3rem;font-weight:800;}
+  .score-circle{
+    min-width:44px;height:44px;border-radius:50%;
+    display:flex;align-items:center;justify-content:center;
+    font-weight:800;font-size:1rem;color:#fff;flex-shrink:0;
+  }
+  .score-circle.high{background:var(--deep);}
+  .score-circle.mid{background:var(--mid);}
+  .score-circle.low{background:var(--gold);}
+  .price-row{font-size:1.05rem;margin-top:4px;}
+  .price-row .chg-pos{color:var(--mid);font-weight:700;}
+  .price-row .chg-neg{color:var(--red);font-weight:700;}
+  .cat-label{color:var(--muted);font-size:.88rem;margin-left:6px;}
+  .reasons{margin-top:9px;display:flex;flex-wrap:wrap;gap:6px;}
+  .chip{
+    background:#E4F2EC;color:var(--deep);font-size:.82rem;font-weight:600;
+    padding:4px 10px;border-radius:999px;
+  }
+  .chip.warn{background:#FDEAEA;color:var(--red);}
+  .stage-tag{
+    display:inline-block;font-size:.86rem;font-weight:700;
+    padding:3px 10px;border-radius:8px;margin-top:6px;
+  }
+  .stage-early{background:#E6F5EA;color:#0F5132;}
+  .stage-mid{background:#FFF6E0;color:#8A6A00;}
+  .stage-late{background:#FDEAEA;color:var(--red);}
+
+  .filter-row{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0;}
+  .filter-chip{
+    flex:1;min-width:100px;text-align:center;
+    border:2px solid var(--border);border-radius:999px;
+    font-size:.82rem;font-weight:700;padding:9px 8px;cursor:pointer;
+    background:#fff;color:var(--muted);
+  }
+  .filter-chip.active.stage-early{background:#1E8E3E;border-color:#1E8E3E;color:#fff;}
+  .filter-chip.active.stage-mid{background:#C98A00;border-color:#C98A00;color:#fff;}
+  .filter-chip.active.stage-late{background:var(--red);border-color:var(--red);color:#fff;}
+
+  .symbol-link{color:var(--text);text-decoration:none;border-bottom:2px dotted var(--mid);}
+  .trade-box{
+    background:#F0F7F4;border-radius:10px;padding:8px 10px;margin-top:8px;
+    font-size:.9rem;display:flex;flex-direction:column;gap:3px;
+  }
+  .trade-box .row{display:flex;justify-content:space-between;}
+  .trade-box .lbl{color:var(--muted);}
+  .trade-box .val{font-weight:700;}
+
+  .toggle-btn{
+    display:block;width:100%;background:none;border:2px solid var(--mid);
+    color:var(--mid);font-weight:700;font-size:1rem;padding:12px;
+    border-radius:999px;margin:14px 0;cursor:pointer;
+  }
+  .download-btn{
+    display:block;width:100%;background:var(--deep);color:#fff;
+    font-weight:700;font-size:1.05rem;padding:15px;border:none;
+    border-radius:999px;margin:18px 0 6px;cursor:pointer;
+  }
+  .empty{text-align:center;color:var(--muted);font-size:1.02rem;padding:18px;}
+  .footer-note{
+    font-size:.86rem;color:var(--muted);text-align:center;
+    margin-top:24px;line-height:1.5;padding:0 6px;
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="htop">
+    <h1>📈 બ્રેકઆઉટ સ્ક્રીનર</h1>
+    <div class="sub">NSE Bhavcopy + RSI · MACD · Moving Average આધારિત તેજીના સંકેત</div>
+    <div style="margin-top:8px;font-size:.82rem;background:rgba(255,255,255,.18);display:inline-block;padding:4px 10px;border-radius:999px;">🔒 ફક્ત વ્યક્તિગત ઉપયોગ માટે (Personal Use Only)</div>
+  </div>
+</header>
+
+<div class="wrap">
+  <div id="reminderBanner"></div>
+
+  <div class="upload-box">
+    <a class="btn btn-nse" id="nseLink" href="#" target="_blank" rel="noopener">🔗 NSE પરથી આજની ફાઈલ ડાઉનલોડ કરો</a>
+    <div class="upload-hint">બટન દબાવતાં ફાઈલ Downloads માં જશે. સાંજે 6-7 વાગ્યા પહેલા ફાઈલ ન પણ મળે.</div>
+    <label class="btn btn-upload" for="fileInput">📤 CSV / ZIP અપલોડ કરો (multi-select ચાલે)</label>
+    <input type="file" id="fileInput" accept=".csv,.zip" multiple>
+    <div class="status" id="status"></div>
+    <button class="btn" id="resetBtn" style="background:var(--red);margin-top:8px;">🗑️ Reset ડેટા (history + date-list બંને ભૂંસો)</button>
+  </div>
+
+  <div id="downloadTop"></div>
+  <div id="results"></div>
+
+  <div class="footer-note">
+    🔒 <b>આ app ફક્ત વ્યક્તિગત ઉપયોગ માટે બનાવેલ છે</b> — વેચાણ, જાહેર વિતરણ કે વ્યાપારિક ઉપયોગ માટે નથી.<br><br>
+    ⚠️ કોઈ પણ ટૂલ 100% ગેરંટી ન આપી શકે. Score ટેકનિકલ સંકેત (ક્લોઝ, વોલ્યુમ, RSI, MACD, Moving Average) પર આધારિત છે — ખરીદી પહેલા પોતાનું રિસર્ચ અને રિસ્ક મેનેજમેન્ટ જરૂરી છે.<br><br>
+    📊 CSV ડાઉનલોડ ફાઈલ Google Sheets માં સીધી ખૂલી જાય (Drive → Upload → આપોઆપ Sheet બને) અને edit કરી શકાય. પણ ખરું <b>"live auto-sync"</b> (કોઈ પણ ફેરફાર વગર બંને બાજુ આપોઆપ update) માટે Google ના પોતાના account/API સેટઅપની જરૂર પડે, જે અહીંથી સીધું શક્ય નથી — એટલે દરેક upload પછી CSV ફરી Sheets માં નાખવી પડશે.
+  </div>
+</div>
+
+<script>
+let lastResults = [];
+let showMid = false;
+let stageFilter = { early: true, mid: true, late: true };
+
+function setStatus(msg){ document.getElementById('status').textContent = msg; }
+
+/* ---------- localStorage helpers ---------- */
+function lsGet(key){
+  try{ const v = localStorage.getItem(key); return v ? JSON.parse(v) : null; }
+  catch(e){ return null; }
+}
+function lsSet(key, value){
+  try{ localStorage.setItem(key, JSON.stringify(value)); return true; }
+  catch(e){ console.error('storage save failed', e); return false; }
+}
+function lsDelete(key){ localStorage.removeItem(key); }
+
+async function loadHistory(){
+  return lsGet('breakout_history') || {};
+}
+async function saveHistory(hist){
+  if(lsSet('breakout_history', hist)) return { ok: true };
+  // quota exceeded — trim per-symbol history and retry
+  for(const cap of [15, 10, 5]){
+    const trimmed = {};
+    for(const sym in hist){ trimmed[sym] = hist[sym].slice(-cap); }
+    if(lsSet('breakout_history', trimmed)){
+      for(const sym in hist){ hist[sym] = trimmed[sym]; }
+      return { ok: true, trimmedTo: cap };
+    }
+  }
+  return { ok: false, error: 'QuotaExceeded' };
+}
+async function loadUploadedDates(){
+  return lsGet('breakout_dates') || [];
+
+}
+async function saveUploadedDates(list){
+  return lsSet('breakout_dates', list);
+}
+
+function normalizeRow(row){
+  const map = {};
+  for(const k in row){ map[k.trim().toUpperCase()] = row[k]; }
+  const get = (...keys)=>{
+    for(const k of keys){ if(map[k]!==undefined && map[k]!==''){ return map[k]; } }
+    return undefined;
+  };
+  const num = v => { const n = parseFloat(v); return isNaN(n) ? undefined : n; };
+  return {
+    symbol: get('SYMBOL','TCKRSYMB'),
+    series: get('SERIES','SCTYSRS'),
+    open: num(get('OPEN','OPEN_PRICE','OPNPRIC')),
+    high: num(get('HIGH','HIGH_PRICE','HGHPRIC')),
+    low: num(get('LOW','LOW_PRICE','LWPRIC')),
+    close: num(get('CLOSE','CLOSE_PRICE','CLSPRIC')),
+    prevClose: num(get('PREVCLOSE','PREV_CLOSE','PRVSCLSGPRIC')),
+    volume: num(get('TOTTRDQTY','TTL_TRD_QNTY','VOLUME','TTLTRADGVOL')) || 0,
+    deliveryPct: num(get('DELIV_PER','%DELIVQTY')),
+    dateStr: get('TIMESTAMP','DATE1','DATE','TRADDT')
+  };
+}
+
+function parseBhavDate(str){
+  if(!str) return null;
+  str = String(str).trim();
+  const months = {JAN:0,FEB:1,MAR:2,APR:3,MAY:4,JUN:5,JUL:6,AUG:7,SEP:8,OCT:9,NOV:10,DEC:11};
+  let m = str.match(/^(\d{1,2})[-\/]([A-Za-z]{3})[-\/](\d{4})$/);
+  if(m){ const mon = months[m[2].toUpperCase()]; if(mon !== undefined) return new Date(Date.UTC(+m[3], mon, +m[1])); }
+  m = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if(m) return new Date(Date.UTC(+m[1], +m[2]-1, +m[3]));
+  const d = new Date(str);
+  if(!isNaN(d)) return d;
+  return null;
+}
+function fmtDate(d){ return d.toISOString().slice(0,10); }
+function isWeekend(d){ const day = d.getUTCDay(); return day===0 || day===6; }
+
+function nseLinkForDate(isoDate){
+  const [y,m,d] = isoDate.split('-');
+  return `https://nsearchives.nseindia.com/content/cm/BhavCopy_NSE_CM_0_0_0_${y}${m}${d}_F_0000.csv.zip`;
+}
+function todayIsoLocal(){
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+
+function computeMissing(uploadedDates){
+  if(!uploadedDates.length) return [];
+  const sorted = [...uploadedDates].sort();
+  const first = new Date(sorted[0] + 'T00:00:00Z');
+  const today = new Date(); today.setUTCHours(0,0,0,0);
+  const have = new Set(uploadedDates);
+  const missing = [];
+  let cur = new Date(first.getTime());
+  while(cur < today){
+    const iso = fmtDate(cur);
+    if(!isWeekend(cur) && !have.has(iso)) missing.push(iso);
+    cur.setUTCDate(cur.getUTCDate()+1);
+  }
+  return missing;
+}
+
+let datesExpanded = false;
+async function refreshReminder(){
+  const dates = await loadUploadedDates();
+  const hist = await loadHistory();
+  const symCount = Object.keys(hist).length;
+  const missing = computeMissing(dates);
+  const el = document.getElementById('reminderBanner');
+  let html = '';
+  if(dates.length && !symCount){
+    html += `<div class="reminder warn">⚠️ <b>Data mismatch:</b> ${dates.length} તારીખ date-list માં છે પણ કોઈ stock history સેવ નથી — નવી ફાઈલો "ફરી" ગણાઈને history નહીં બંધાય. નીચે <b>🗑️ Reset ડેટા</b> દબાવીને ફરી fresh upload કરો.</div>`;
+  }
+  if(missing.length){
+    const links = missing.map(d => `<a href="${nseLinkForDate(d)}" target="_blank" rel="noopener" style="color:var(--red);text-decoration:underline;">${d}</a>`).join(', ');
+    html += `<div class="reminder warn">⏰ <b>${missing.length} દિવસ</b>ની ફાઈલ વચ્ચે upload નથી કરી (ગેપ): ${links}</div>`;
+  }
+  if(dates.length){
+    const sortedDates = [...dates].sort();
+    html += `<div class="reminder info">
+      <div id="datesToggle" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;">
+        <b>${sortedDates.length} તારીખની ફાઈલ સેવ છે</b><span>${datesExpanded ? '▲' : '▼'}</span>
+      </div>
+      ${datesExpanded ? `<div style="font-size:.85rem;margin-top:6px;">${sortedDates.join(', ')}</div>` : ''}
+    </div>`;
+  }
+  el.innerHTML = html;
+  const toggle = document.getElementById('datesToggle');
+  if(toggle) toggle.onclick = () => { datesExpanded = !datesExpanded; refreshReminder(); };
+}
+
+/* ---------- Technical indicators ---------- */
+function computeRSI(closes, period=14){
+  if(closes.length < period+1) return null;
+  let gains=0, losses=0;
+  for(let i=closes.length-period;i<closes.length;i++){
+    const diff = closes[i]-closes[i-1];
+    if(diff>=0) gains+=diff; else losses-=diff;
+  }
+  const avgGain=gains/period, avgLoss=losses/period;
+  if(avgLoss===0) return 100;
+  const rs=avgGain/avgLoss;
+  return 100 - (100/(1+rs));
+}
+function computeSMA(closes, period){
+  if(closes.length < period) return null;
+  const slice = closes.slice(-period);
+  return slice.reduce((a,b)=>a+b,0)/period;
+}
+function emaSeries(values, period){
+  if(values.length < period) return [];
+  const k = 2/(period+1);
+  const out = [];
+  let prev = values.slice(0,period).reduce((a,b)=>a+b,0)/period;
+  out[period-1]=prev;
+  for(let i=period;i<values.length;i++){ prev = values[i]*k + prev*(1-k); out[i]=prev; }
+  return out;
+}
+function computeMACD(closes){
+  if(closes.length < 26) return null;
+  const ema12 = emaSeries(closes,12);
+  const ema26 = emaSeries(closes,26);
+  const macdLine = [];
+  for(let i=0;i<closes.length;i++){ if(ema12[i]!==undefined && ema26[i]!==undefined) macdLine[i]=ema12[i]-ema26[i]; }
+  const macdValues = macdLine.filter(v=>v!==undefined);
+  if(!macdValues.length) return null;
+  const macd = macdValues[macdValues.length-1];
+  if(macdValues.length < 9) return { macd, signal:null, prevMacd:null, prevSignal:null };
+  const signalSeries = emaSeries(macdValues,9);
+  const signal = signalSeries[signalSeries.length-1];
+  const prevMacd = macdValues[macdValues.length-2];
+  const prevSignal = signalSeries[signalSeries.length-2];
+  return { macd, signal, prevMacd, prevSignal };
+}
+function computeIndicators(pastCloses, todayClose){
+  const closes = [...pastCloses, todayClose];
+  return { rsi: computeRSI(closes,14), ma20: computeSMA(closes,20), ma5: computeSMA(closes,5), macd: computeMACD(closes) };
+}
+
+function scoreStock(row, hist){
+  let score = 0;
+  const reasons = [];
+
+  if(row.high > row.low){
+    const pos = (row.close - row.low) / (row.high - row.low);
+    if(pos >= 0.85){ score += 30; reasons.push('મજબૂત ક્લોઝ'); }
+    else if(pos >= 0.7){ score += 18; reasons.push('સારો ક્લોઝ'); }
+  }
+
+  let chg = null;
+  if(row.prevClose > 0){
+    chg = (row.close - row.prevClose) / row.prevClose * 100;
+    if(chg >= 1 && chg <= 8){ score += 25; reasons.push('પોઝિટિવ મોમેન્ટમ'); }
+    else if(chg > 8){ score += 8; reasons.push('વધુ પડતું વધેલ'); }
+  }
+
+  const prevVols = (hist || []).map(h => h[1]).filter(v => v > 0);
+  let volRatio = null;
+  if(prevVols.length >= 3){
+    const avgVol = prevVols.reduce((a,b)=>a+b,0) / prevVols.length;
+    if(avgVol > 0){
+      volRatio = row.volume / avgVol;
+      if(volRatio >= 2){ score += 25; reasons.push('વોલ્યુમ 2x+'); }
+      else if(volRatio >= 1.5){ score += 15; reasons.push('વોલ્યુમ વધારો'); }
+    }
+  }
+
+  if(row.deliveryPct && row.deliveryPct >= 50){ score += 8; reasons.push('ડિલિવરી વધુ'); }
+
+  if(hist && hist.length >= 2){
+    let streak = 0;
+    for(let i = hist.length - 1; i >= 1; i--){ if(hist[i][0] > hist[i-1][0]) streak++; else break; }
+    if(streak >= 2){ score += 8; reasons.push(streak + ' દિવસ સતત વધારો'); }
+  }
+
+  const pastCloses = (hist || []).map(h => h[0]);
+  const ind = computeIndicators(pastCloses, row.close);
+
+  if(ind.rsi !== null){
+    if(ind.rsi >= 50 && ind.rsi <= 70){ score += 15; reasons.push('RSI ' + ind.rsi.toFixed(0) + ' તેજીમાં'); }
+    else if(ind.rsi > 70){ reasons.push('RSI ' + ind.rsi.toFixed(0) + ' overbought'); }
+  }
+  if(ind.ma20 !== null && row.close > ind.ma20){ score += 10; reasons.push('20MA ઉપર'); }
+  if(ind.macd){
+    if(ind.macd.signal !== null){
+      const bullNow = ind.macd.macd > ind.macd.signal;
+      const bullPrev = ind.macd.prevMacd !== null ? ind.macd.prevMacd > ind.macd.prevSignal : null;
+      if(bullNow && bullPrev === false){ score += 20; reasons.push('MACD બુલિશ ક્રોસ'); }
+      else if(bullNow){ score += 8; reasons.push('MACD પોઝિટિવ'); }
+    } else if(ind.macd.macd > 0){
+      score += 5; reasons.push('MACD પોઝિટિવ (અંદાજિત)');
+    }
+  }
+
+  return { score: Math.min(score, 100), reasons, chg, volRatio, rsi: ind.rsi, ma20: ind.ma20 };
+}
+
+function moveStage(chg, rsi, close, ma20){
+  let flags = 0;
+  if(rsi !== null && rsi !== undefined && rsi >= 70) flags++;
+  if(chg !== null && chg !== undefined && chg > 6) flags++;
+  if(ma20 !== null && ma20 !== undefined && close > ma20 * 1.10) flags++;
+  if(flags >= 2) return { label: 'Profit પૂરું', key: 'late', cls: 'stage-late' };
+  if(flags === 1) return { label: 'Profit ચાલુ', key: 'mid', cls: 'stage-mid' };
+  return { label: 'Profit માટે Entry લ્યો', key: 'early', cls: 'stage-early' };
+}
+
+function googleLink(symbol){
+  return `https://www.google.com/search?q=NSE:${encodeURIComponent(symbol)}+share+price`;
+}
+
+document.getElementById('fileInput').addEventListener('change', handleFile);
+
+async function resetData(){
+  const hist = await loadHistory();
+  const dates = await loadUploadedDates();
+  const symCount = Object.keys(hist).length;
+  const ok = confirm(
+    `આ ${symCount} શેર ની history અને ${dates.length} તારીખની date-list — બંને કાયમ માટે ભૂંસાઈ જશે.\n\n` +
+    `ખરેખર Reset કરવું છે?`
+  );
+  if(!ok) return;
+  lsDelete('breakout_history');
+  lsDelete('breakout_dates');
+  lsDelete('breakout_last_results');
+  lastResults = [];
+  updateStatPills(0, 0);
+  await refreshReminder();
+  document.getElementById('results').innerHTML = '';
+  document.getElementById('downloadTop').innerHTML = '';
+  setStatus('✅ Reset થઈ ગયું — history + date-list બંને ખાલી. હવે ફાઈલો ફરી upload કરો.');
+}
+
+document.getElementById('resetBtn').addEventListener('click', resetData);
+
+function readFileAsRows(file){
+  return new Promise((resolve, reject) => {
+    const name = file.name.toLowerCase();
+    if(name.endsWith('.zip')){
+      const reader = new FileReader();
+      reader.onload = async function(ev){
+        try{
+          const zip = await JSZip.loadAsync(ev.target.result);
+          const csvEntry = Object.values(zip.files).find(f => !f.dir && f.name.toLowerCase().endsWith('.csv'));
+          if(!csvEntry){ reject(new Error('ZIP માં CSV ફાઈલ ન મળી')); return; }
+          const text = await csvEntry.async('string');
+          Papa.parse(text, { header:true, skipEmptyLines:true, complete: res => resolve(res.data), error: err => reject(err) });
+        }catch(err){ reject(err); }
+      };
+      reader.onerror = () => reject(new Error('ફાઈલ વાંચવામાં ભૂલ'));
+      reader.readAsArrayBuffer(file);
+    } else {
+      Papa.parse(file, { header:true, skipEmptyLines:true, complete: (res) => resolve(res.data), error: (err) => reject(err) });
+    }
+  });
+}
+
+async function handleFile(e){
+  const files = Array.from(e.target.files || []);
+  if(!files.length) return;
+  files.sort((a,b) => a.name.localeCompare(b.name));
+
+  const hist = await loadHistory();
+  const uploadedDates = await loadUploadedDates();
+
+  const summary = [];
+  let finalScored = null, finalDate = null;
+
+  for(let i = 0; i < files.length; i++){
+    const f = files[i];
+    setStatus(`ફાઈલ ${i+1}/${files.length} પ્રોસેસ થાય છે... (${f.name})`);
+    try{
+      const rows = await readFileAsRows(f);
+      const { fileDate, scored, isReupload } = processFileRows(rows, hist, uploadedDates);
+      summary.push(fileDate ? (fileDate + (isReupload ? ' (ફરી)' : '')) : f.name);
+      if(!finalDate || (fileDate && fileDate > finalDate)){ finalDate = fileDate; finalScored = scored; }
+    }catch(err){ summary.push(`❌ ${f.name}`); }
+  }
+
+  setStatus(`ડેટા સેવ થાય છે...`);
+  const histResult = await saveHistory(hist);
+  const ok2 = await saveUploadedDates(uploadedDates);
+
+  if(finalScored){
+    lastResults = finalScored;
+    lsSet('breakout_last_results', lastResults);
+    render();
+  }
+  const maxDays = Math.max(0, ...Object.values(hist).map(h => h.length));
+  updateStatPills(Object.keys(hist).length, maxDays);
+  await refreshReminder();
+
+  let statusMsg;
+  if(!histResult.ok || !ok2){
+    statusMsg = `⚠️ ડેટા મોટું હોવાથી સેવ ન થયું (${histResult.error || 'quota'}) — ઓછી ફાઈલો (10-15) એક સાથે upload કરી જુઓ`;
+  } else if(histResult.trimmedTo){
+    statusMsg = `⚠️ Storage ભરાઈ ગયું હતું — ડેટા છેલ્લા ${histResult.trimmedTo} દિવસ સુધી ટૂંકું કરીને સેવ કર્યું (RSI/MACD માટે ઓછું ચોક્કસ થશે)`;
+  } else {
+    const newCount = summary.filter(s => !s.includes('(ફરી)') && !s.startsWith('❌')).length;
+    const reuploadCount = summary.filter(s => s.includes('(ફરી)')).length;
+    const failCount = summary.filter(s => s.startsWith('❌')).length;
+    statusMsg = `✅ ${files.length} ફાઈલ પ્રોસેસ થઈ (${newCount} નવી${reuploadCount ? `, ${reuploadCount} ફરી` : ''}${failCount ? `, ${failCount} ફેલ` : ''})`;
+  }
+  setStatus(statusMsg);
+  e.target.value = '';
+}
+
+function processFileRows(rows, hist, uploadedDates){
+  const results = [];
+  let dateSeen = null;
+
+  for(const raw of rows){
+    const row = normalizeRow(raw);
+    if(!row.symbol) continue;
+    if(row.series && row.series.trim().toUpperCase() !== 'EQ') continue;
+    if(row.close === undefined || row.high === undefined || row.low === undefined) continue;
+    if(!dateSeen && row.dateStr) dateSeen = row.dateStr;
+    results.push(row);
+  }
+
+  const parsedDate = parseBhavDate(dateSeen);
+  const fileDate = parsedDate ? fmtDate(parsedDate) : null;
+  const isReupload = fileDate && uploadedDates.includes(fileDate);
+
+  const scored = [];
+  for(const row of results){
+    const symHist = hist[row.symbol] || [];
+    const { score, reasons, chg, volRatio, rsi, ma20 } = scoreStock(row, symHist);
+    const entry = row.high ? +(row.high * 1.005).toFixed(2) : null;
+    const stopLoss = row.low ? +(row.low * 0.99).toFixed(2) : null;
+    const target = (entry && stopLoss) ? +(entry + 2 * (entry - stopLoss)).toFixed(2) : null;
+    const stage = moveStage(chg, rsi, row.close, ma20);
+    scored.push({ ...row, score, reasons, chg, volRatio, rsi, entry, stopLoss, target, stage });
+    if(!isReupload){
+      symHist.push([+row.close.toFixed(2), Math.round(row.volume || 0)]);
+      while(symHist.length > 30) symHist.shift();
+      hist[row.symbol] = symHist;
+    }
+  }
+
+  if(!isReupload && fileDate){ uploadedDates.push(fileDate); }
+
+  return { fileDate, scored: scored.sort((a,b) => b.score - a.score), isReupload };
+}
+
+function updateStatPills(symCount, maxDays){
+  const el = document.getElementById('statPills');
+  if(!el) return;
+  el.innerHTML = symCount
+    ? `<span class="stat-pill">📊 ${symCount} શેર ડેટા</span><span class="stat-pill">🗓️ ${maxDays} દિવસનો ઇતિહાસ${maxDays<26 ? ' (MACD માટે 26+ જોઈએ)' : ''}</span>`
+    : `<span class="stat-pill">હજુ કોઈ ડેટા સેવ નથી</span>`;
+}
+
+function scoreClass(score){ if(score >= 80) return 'high'; if(score >= 65) return 'mid'; return 'low'; }
+function scoreLabel(score){ if(score >= 80) return 'ખૂબ મજબૂત'; if(score >= 65) return 'મજબૂત'; return 'મધ્યમ'; }
+
+function cardHtml(r){
+  const chgHtml = r.chg !== null && r.chg !== undefined
+    ? `<span class="${r.chg >= 0 ? 'chg-pos' : 'chg-neg'}">${r.chg >= 0 ? '+' : ''}${r.chg.toFixed(1)}%</span>` : '';
+  const cls = scoreClass(r.score);
+  const tradeHtml = (r.entry && r.stopLoss)
+    ? `<div class="trade-box">
+        <div class="row"><span class="lbl">Entry (High+0.5%)</span><span class="val">₹${r.entry}</span></div>
+        <div class="row"><span class="lbl">Stop-loss (Low-1%)</span><span class="val" style="color:var(--red)">₹${r.stopLoss}</span></div>
+        ${r.target ? `<div class="row"><span class="lbl">Target (1:2)</span><span class="val" style="color:var(--mid)">₹${r.target}</span></div>` : ''}
+      </div>`
+    : '';
+  const stageHtml = r.stage ? `<div class="stage-tag ${r.stage.cls}">${r.stage.label}</div>` : '';
+  return `
+  <div class="card">
+    <div class="stripe ${cls}"></div>
+    <div class="card-inner">
+      <div class="card-top">
+        <div>
+          <a class="symbol symbol-link" href="${googleLink(r.symbol)}" target="_blank" rel="noopener">${r.symbol}</a>
+          <div class="price-row">₹${r.close.toFixed(2)} &nbsp; ${chgHtml}<span class="cat-label">${scoreLabel(r.score)}</span></div>
+          ${stageHtml}
+        </div>
+        <div class="score-circle ${cls}">${r.score}</div>
+      </div>
+      ${tradeHtml}
+      <div class="reasons">${r.reasons.map(x => `<span class="chip ${(x.includes('overbought')||x.includes('વધુ પડતું'))?'warn':''}">${x}</span>`).join('')}</div>
+    </div>
+  </div>`;
+}
+
+function stageFilterHtml(){
+  const defs = [
+    { key:'early', label:'Profit માટે Entry લ્યો', cls:'stage-early' },
+    { key:'mid', label:'Profit ચાલુ', cls:'stage-mid' },
+    { key:'late', label:'Profit પૂરું', cls:'stage-late' }
+  ];
+  return `<div class="filter-row">` + defs.map(d =>
+    `<div class="filter-chip ${d.cls} ${stageFilter[d.key] ? 'active' : ''}" data-key="${d.key}">${d.label}</div>`
+  ).join('') + `</div>`;
+}
+
+function render(){
+  const box = document.getElementById('results');
+  const passesFilter = r => r.stage && stageFilter[r.stage.key];
+  const top = lastResults.filter(r => r.score >= 65 && passesFilter(r));
+  const mid = lastResults.filter(r => r.score >= 50 && r.score < 65 && passesFilter(r));
+
+  let html = '';
+  html += stageFilterHtml();
+  html += `<div class="section-title">🔥 ટોપ સંભાવના (${top.length})</div>`;
+  html += top.length ? top.map(cardHtml).join('') : `<div class="empty">આ ફિલ્ટરમાં કોઈ મજબૂત બ્રેકઆઉટ સેટઅપ ન મળ્યો.</div>`;
+
+  html += `<button class="toggle-btn" id="toggleBtn">${showMid ? '▲ મધ્યમ સંભાવના છુપાવો' : `▼ મધ્યમ સંભાવના પણ જુઓ (${mid.length})`}</button>`;
+  if(showMid){ html += mid.length ? mid.map(cardHtml).join('') : `<div class="empty">મધ્યમ કક્ષાનો પણ કોઈ શેર નથી.</div>`; }
+
+  box.innerHTML = html;
+  document.getElementById('toggleBtn').onclick = () => { showMid = !showMid; render(); };
+  document.querySelectorAll('.filter-chip').forEach(chip => {
+    chip.onclick = () => { stageFilter[chip.dataset.key] = !stageFilter[chip.dataset.key]; render(); };
+  });
+
+  const downloadable = lastResults.filter(r => r.score >= 50).length;
+  const dtop = document.getElementById('downloadTop');
+  dtop.innerHTML = downloadable ? `<button class="download-btn" id="downloadBtn">⬇️ પરિણામ ડાઉનલોડ કરો (CSV — Google Sheets માટે તૈયાર)</button>` : '';
+  const dl = document.getElementById('downloadBtn');
+  if(dl) dl.onclick = downloadCsv;
+}
+
+function downloadCsv(){
+  const rows = lastResults.filter(r => r.score >= 50).map(r => ({
+    SYMBOL: r.symbol,
+    CLOSE: r.close,
+    ENTRY: r.entry || '',
+    TARGET: r.target || '',
+    STOPLOSS: r.stopLoss || '',
+    'CHANGE %': r.chg !== null && r.chg !== undefined ? r.chg.toFixed(2) : '',
+    RSI: r.rsi !== null && r.rsi !== undefined ? r.rsi.toFixed(1) : '',
+    'MOVE STAGE': r.stage ? r.stage.label : '',
+    SCORE: r.score,
+    CATEGORY: scoreLabel(r.score),
+    REASONS: r.reasons.join(' | ')
+  }));
+  if(!rows.length){
+    setStatus('⚠️ score 50+ વાળો કોઈ શેર નથી, એટલે ડાઉનલોડ કરવા કંઈ નથી.');
+    return;
+  }
+  const csv = Papa.unparse(rows);
+  try{
+    const dataUri = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+    const a = document.createElement('a');
+    a.href = dataUri;
+    a.download = `breakout-list-${new Date().toISOString().slice(0,10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }catch(err){
+    setStatus('❌ ડાઉનલોડમાં ભૂલ: ' + err.message);
+  }
+}
+
+(async function init(){
+  document.getElementById('nseLink').href = nseLinkForDate(todayIsoLocal());
+  const statDiv = document.createElement('div');
+  statDiv.className = 'stat-row';
+  statDiv.id = 'statPills';
+  document.querySelector('.upload-box').before(statDiv);
+
+  const hist = await loadHistory();
+  const maxDays = Math.max(0, ...Object.values(hist).map(h => h.length));
+  updateStatPills(Object.keys(hist).length, maxDays);
+  await refreshReminder();
+
+  // Restore the last screening results so reopening the app doesn't show blank —
+  // only new file uploads recompute; this just redisplays what was last shown.
+  const savedResults = lsGet('breakout_last_results');
+  if(savedResults && savedResults.length){
+    lastResults = savedResults;
+    render();
+  }
+})();
+
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{
+    navigator.serviceWorker.register('sw.js').catch(()=>{});
+  });
+}
+</script>
+</body>
+</html>
