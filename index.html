@@ -232,6 +232,19 @@ async function saveUploadedDates(list){
   return lsSet('breakout_dates', list);
 }
 
+// Saves the scored results list so reopening the app shows the previous screening
+// instead of blank. This is a SEPARATE localStorage write from history — if it's too
+// large to fit (2000+ scored stocks with reasons/stage text is a lot), trim to the
+// top N by score (already sorted) and retry, same idea as saveHistory's day-trimming.
+function saveLastResults(results){
+  if(lsSet('breakout_last_results', results)) return { ok: true };
+  for(const cap of [300, 150, 75, 30]){
+    const trimmed = results.slice(0, cap);
+    if(lsSet('breakout_last_results', trimmed)) return { ok: true, trimmedTo: cap };
+  }
+  return { ok: false };
+}
+
 function normalizeRow(row){
   const map = {};
   for(const k in row){ map[k.trim().toUpperCase()] = row[k]; }
@@ -526,9 +539,12 @@ async function handleFile(e){
   const histResult = await saveHistory(hist);
   const ok2 = await saveUploadedDates(uploadedDates);
 
+  let resultsSaveOk = true, resultsSaveTrimmedTo = null;
   if(finalScored){
     lastResults = finalScored;
-    lsSet('breakout_last_results', lastResults);
+    const saved = saveLastResults(lastResults);
+    resultsSaveOk = saved.ok;
+    resultsSaveTrimmedTo = saved.trimmedTo || null;
     render();
   }
   const maxDays = Math.max(0, ...Object.values(hist).map(h => h.length));
@@ -536,10 +552,13 @@ async function handleFile(e){
   await refreshReminder();
 
   let statusMsg;
-  if(!histResult.ok || !ok2){
+  if(!histResult.ok || !ok2 || !resultsSaveOk){
     statusMsg = `⚠️ તમારા ડિવાઈસમાં જગ્યા ઓછી છે — 26 દિવસ (MACD ના ન્યૂનતમ) સુધી ટૂંકું કરીને પણ સેવ ના થયું. "🗑️ Reset ડેટા" દબાવીને ઓછા શેર/ફાઈલો સાથે ફરી શરૂ કરો.`;
-  } else if(histResult.trimmedTo){
-    statusMsg = `⚠️ Storage ભરાઈ ગયું હતું — ડેટા છેલ્લા ${histResult.trimmedTo} દિવસ સુધી ટૂંકું કરીને સેવ કર્યું (MACD ના 26-day ન્યૂનતમ ની નીચે નથી ગયું)`;
+  } else if(histResult.trimmedTo || resultsSaveTrimmedTo){
+    const parts = [];
+    if(histResult.trimmedTo) parts.push(`history છેલ્લા ${histResult.trimmedTo} દિવસ સુધી`);
+    if(resultsSaveTrimmedTo) parts.push(`પરિણામ યાદી ટોપ ${resultsSaveTrimmedTo} શેર સુધી`);
+    statusMsg = `⚠️ Storage ભરાઈ ગયું હતું — ${parts.join(', ')} ટૂંકું કરીને સેવ કર્યું`;
   } else {
     const newCount = summary.filter(s => !s.includes('(ફરી)') && !s.startsWith('❌')).length;
     const reuploadCount = summary.filter(s => s.includes('(ફરી)')).length;
