@@ -792,7 +792,8 @@ if('serviceWorker' in navigator){
 
 // ================= Backup: GitHub Cloud Sync (Automatic) =================
 const BACKUP_KEYS = ['breakout_history', 'breakout_dates', 'breakout_last_results'];
-const GH_SETTINGS_KEY = 'ghSyncSettingsV1';
+const GH_DEFAULTS = { owner:'bhavikpeepee02-8966', repo:'Bvkdatabkp', token:'', path:'breakout-screener-simple.json' };
+const GH_SETTINGS_KEY = 'ghSyncSettingsV1_' + GH_DEFAULTS.path; // per-app key — apps on the same github.io domain share localStorage otherwise
 
 function collectAllData(){
   const out = {};
@@ -818,14 +819,12 @@ const ghRepoInput = document.getElementById('ghRepo');
 const ghTokenInput = document.getElementById('ghToken');
 const ghPathInput = document.getElementById('ghPath');
 const ghSyncStatus = document.getElementById('ghSyncStatus');
-const GH_DEFAULTS = { owner:'bhavikpeepee02-8966', repo:'Bvkdatabkp', token:'', path:'breakout-screener-simple.json' };
-
 (function initGhFields(){
   const s = loadGhSettings();
   ghOwnerInput.value = s.owner || GH_DEFAULTS.owner;
   ghRepoInput.value = s.repo || GH_DEFAULTS.repo;
   ghTokenInput.value = s.token || GH_DEFAULTS.token;
-  ghPathInput.value = s.path || GH_DEFAULTS.path;
+  ghPathInput.value = GH_DEFAULTS.path;
 })();
 
 function currentGhConfig(){
